@@ -1,0 +1,45 @@
+# Dependencies and build
+node_modules
+dist
+.output
+.tanstack
+*.tsbuildinfo
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea
+.vscode
+
+# Env / secrets
+.env
+.env.*
+
+# Private catalogs — never commit
+profiles/private/
+profiles/private/**
+private-catalog.ts
+private-history.json
+**/private-history.json
+**/private-catalog.ts
+
+# Spreadsheets and local ledger dumps
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Browser / export dumps that may contain private history
+localStorage*.json
+*-dump.json
+workout-lab-100*.json
+!src/lib/lab/catalog.ts

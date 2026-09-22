@@ -1,0 +1,17 @@
+# Paste into the repo-root .gitignore when adding desktop/
+# next to the Android tracker. Do not replace the existing
+# Gradle / session rules.
+
+# Desktop lab
+desktop/node_modules/
+desktop/dist/
+desktop/.tanstack/
+desktop/profiles/private/
+
+# Private catalogs and spreadsheets (any path)
+profiles/private/
+*.xlsx
+*.xls
+*.xlsm
+private-history.json
+private-catalog.ts

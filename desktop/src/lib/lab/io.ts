@@ -1,0 +1,113 @@
+import { noonOnDay, localDayKey } from "./dates";
+import type { Exercise, PointEvent, Profile } from "./types";
+
+export type EventPack = {
+  ids: string[];
+  days: string[];
+  triples: number[];
+};
+
+export function packWorkoutEvents(events: PointEvent[]): {
+  pack: EventPack;
+  rest: PointEvent[];
+} {
+  const ids: string[] = [];
+  const idIndex = new Map<string, number>();
+  const days: string[] = [];
+  const dayIndex = new Map<string, number>();
+  const byExDay = new Map<string, number>();
+  const rest: PointEvent[] = [];
+  for (const e of events) {
+    if (e.kind !== "workout" || !e.exerciseId || e.points <= 0) {
+      rest.push(e);
+      continue;
+    }
+    const day = localDayKey(e.timestamp);
+    if (!idIndex.has(e.exerciseId)) {
+      idIndex.set(e.exerciseId, ids.length);
+      ids.push(e.exerciseId);
+    }
+    if (!dayIndex.has(day)) {
+      dayIndex.set(day, days.length);
+      days.push(day);
+    }
+    const key = `${e.exerciseId}\t${day}`;
+    byExDay.set(key, (byExDay.get(key) ?? 0) + e.points);
+  }
+  const triples: number[] = [];
+  for (const [key, pts] of byExDay) {
+    const [exId, day] = key.split("\t");
+    triples.push(idIndex.get(exId!)!, dayIndex.get(day!)!, pts);
+  }
+  return { pack: { ids, days, triples }, rest };
+}
+
+export function unpackWorkoutEvents(
+  pack: EventPack,
+  exercises: Exercise[],
+  rest: PointEvent[],
+): PointEvent[] {
+  const cat = new Map(exercises.map((e) => [e.id, e.categoryId]));
+  const events: PointEvent[] = [...rest];
+  const t = pack.triples;
+  for (let i = 0; i < t.length; i += 3) {
+    const exId = pack.ids[t[i]!];
+    const day = pack.days[t[i + 1]!];
+    const pts = t[i + 2]!;
+    if (!exId || !day || pts <= 0) continue;
+    events.push({
+      id: `hist-${exId}-${day}`,
+      kind: "workout",
+      points: pts,
+      timestamp: noonOnDay(day),
+      exerciseId: exId,
+      categoryId: cat.get(exId),
+    });
+  }
+  return events;
+}
+
+export function serializeProfile(profile: Profile) {
+  const { pack, rest } = packWorkoutEvents(profile.events);
+  return { ...profile, events: rest, eventPack: pack };
+}
+
+export function parseProfile(raw: unknown, fallback: Profile): Profile {
+  if (!raw || typeof raw !== "object") return fallback;
+  const o = raw as Partial<Profile> & { eventPack?: EventPack };
+  const exercises = Array.isArray(o.exercises) ? (o.exercises as Exercise[]) : fallback.exercises;
+  const rest = Array.isArray(o.events) ? (o.events as PointEvent[]) : [];
+  const events = o.eventPack ? unpackWorkoutEvents(o.eventPack, exercises, rest) : rest;
+  return {
+    ...fallback,
+    ...o,
+    exercises,
+    events,
+    rules: { ...fallback.rules, ...(o.rules ?? {}) },
+    plans: Array.isArray(o.plans) ? o.plans : fallback.plans,
+  };
+}
+
+export function exportLab(data: { activeProfileId: string; profiles: Profile[] }) {
+  return JSON.stringify(
+    {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      activeProfileId: data.activeProfileId,
+      profiles: data.profiles.map(serializeProfile),
+    },
+    null,
+    2,
+  );
+}
+
+export function parseImport(raw: unknown): {
+  activeProfileId?: string;
+  profiles: unknown[];
+} | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as { profiles?: unknown; profile?: unknown; activeProfileId?: string };
+  if (Array.isArray(o.profiles)) return { activeProfileId: o.activeProfileId, profiles: o.profiles };
+  if (o.profile) return { profiles: [o.profile] };
+  return null;
+}
