@@ -1,11 +1,47 @@
 import { noonOnDay, localDayKey } from "./dates";
-import type { Exercise, PointEvent, Profile } from "./types";
+import {
+  LAB_EXPORT_VERSION,
+  type DayStamp,
+  type Exercise,
+  type PointEvent,
+  type Profile,
+} from "./types";
+
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Keep valid stamps. Absent field stays absent. Does not invent stamps. */
+function parseDayStamps(raw: unknown): DayStamp[] | undefined {
+  if (raw == null) return undefined;
+  if (!Array.isArray(raw)) return undefined;
+  const stamps: DayStamp[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const s = item as Partial<DayStamp>;
+    if (typeof s.id !== "string" || s.id.length === 0) continue;
+    if (typeof s.day !== "string" || !DAY_KEY.test(s.day)) continue;
+    if (typeof s.upAt !== "number" || !Number.isFinite(s.upAt)) continue;
+    const stamp: DayStamp = { id: s.id, day: s.day, upAt: s.upAt };
+    if (s.sleepAt != null) {
+      if (typeof s.sleepAt !== "number" || !Number.isFinite(s.sleepAt)) continue;
+      stamp.sleepAt = s.sleepAt;
+    }
+    stamps.push(stamp);
+  }
+  return stamps;
+}
 
 export type EventPack = {
   ids: string[];
   days: string[];
   triples: number[];
 };
+
+/** Rows that must keep their id through export. Packing rewrites workout ids. */
+function isAtomicEvent(e: PointEvent): boolean {
+  if (e.source === "tracker") return true;
+  if (typeof e.sessionId === "string" && e.sessionId.length > 0) return true;
+  return typeof e.miles === "number" && Number.isFinite(e.miles) && e.miles > 0;
+}
 
 export function packWorkoutEvents(events: PointEvent[]): {
   pack: EventPack;
@@ -18,7 +54,8 @@ export function packWorkoutEvents(events: PointEvent[]): {
   const byExDay = new Map<string, number>();
   const rest: PointEvent[] = [];
   for (const e of events) {
-    if (e.kind !== "workout" || !e.exerciseId || e.points <= 0) {
+    // Tracker rows keep their own id. Packing would rewrite them as hist-<exercise>-<day>.
+    if (e.kind !== "workout" || !e.exerciseId || e.points <= 0 || isAtomicEvent(e)) {
       rest.push(e);
       continue;
     }
@@ -85,13 +122,14 @@ export function parseProfile(raw: unknown, fallback: Profile): Profile {
     events,
     rules: { ...fallback.rules, ...(o.rules ?? {}) },
     plans: Array.isArray(o.plans) ? o.plans : fallback.plans,
+    dayStamps: parseDayStamps(o.dayStamps),
   };
 }
 
 export function exportLab(data: { activeProfileId: string; profiles: Profile[] }) {
   return JSON.stringify(
     {
-      version: 1,
+      version: LAB_EXPORT_VERSION,
       exportedAt: new Date().toISOString(),
       activeProfileId: data.activeProfileId,
       profiles: data.profiles.map(serializeProfile),

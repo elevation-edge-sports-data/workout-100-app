@@ -2,7 +2,32 @@ import { create } from "zustand";
 import { emptyLab, migrateLabPalette, presetRules, AUTHOR_PALETTE_REV } from "./defaults";
 import { exportLab, parseImport, parseProfile, serializeProfile } from "./io";
 import { milesToPoints, scoreToday } from "./engine";
-import { STORAGE_KEY, type Category, type EventKind, type Exercise, type LabData, type PlanItem, type PresetId, type Profile } from "./types";
+import {
+  applySleepNow,
+  applyUpNow,
+  localDayKey,
+  manualPointTimestamp,
+  setDaySleep as writeSleep,
+  setDayUp as writeUp,
+} from "./dates";
+import {
+  formatIngestBatch,
+  ingestTrackerSession as ingestTrackerSessionIntoProfile,
+  ingestTrackerSessions as ingestTrackerSessionsIntoProfile,
+  type IngestTrackerResult,
+} from "./session";
+import {
+  STORAGE_KEY,
+  type Category,
+  type EventKind,
+  type EventSource,
+  type Exercise,
+  type LabData,
+  type PlanItem,
+  type PointEvent,
+  type PresetId,
+  type Profile,
+} from "./types";
 
 type LabState = LabData & { hydrated: boolean };
 
@@ -34,6 +59,9 @@ type LabActions = {
     exerciseId?: string;
     note?: string;
     timestamp?: number;
+    source?: EventSource;
+    sessionId?: string;
+    miles?: number;
   }) => void;
   adjustToday: (input: {
     kind: EventKind;
@@ -41,7 +69,21 @@ type LabActions = {
     categoryId?: string;
     exerciseId?: string;
   }) => void;
+  addPointsOnDay: (input: {
+    day: string;
+    time?: string | null;
+    kind: EventKind;
+    points: number;
+    categoryId?: string;
+    exerciseId?: string;
+  }) => void;
+  setDayUp: (day: string, upAt: number) => void;
+  setDaySleep: (day: string, sleepAt: number | null) => void;
+  stampUpNow: () => string;
+  stampSleepNow: () => void;
   logMiles: (miles: number, categoryId?: string) => void;
+  ingestTrackerSession: (raw: unknown) => { status: IngestTrackerResult["status"]; summary: string };
+  ingestTrackerSessions: (raw: unknown) => string;
   addPlan: (name: string) => string;
   renamePlan: (id: string, name: string) => void;
   removePlan: (id: string) => void;
@@ -59,6 +101,21 @@ type LabActions = {
 
 function newId() {
   return crypto.randomUUID();
+}
+
+function ingestSummary(result: IngestTrackerResult): string {
+  const id = result.event?.sessionId;
+  const label = id ? `Session ${id}` : "Session";
+  switch (result.status) {
+    case "added":
+      return `Added ${result.event?.points ?? 0} pt (${result.event?.miles ?? 0} mi) from session ${id}.`;
+    case "duplicate":
+      return `${label} is already in the ledger.`;
+    case "zero-points":
+      return `${label} is under 1 point.`;
+    default:
+      return "Rejected: not a valid tracker session.";
+  }
 }
 
 function patchActive(profiles: Profile[], id: string, fn: (p: Profile) => Profile): Profile[] {
@@ -243,7 +300,7 @@ export const useLabStore = create<LabState & LabActions>((set, get) => ({
 
   addEvent: (input) => {
     if (input.points === 0) return;
-    const ev = {
+    const ev: PointEvent = {
       id: newId(),
       kind: input.kind,
       points: input.points,
@@ -252,6 +309,9 @@ export const useLabStore = create<LabState & LabActions>((set, get) => ({
       exerciseId: input.exerciseId,
       note: input.note,
     };
+    if (input.source !== undefined) ev.source = input.source;
+    if (input.sessionId !== undefined) ev.sessionId = input.sessionId;
+    if (input.miles !== undefined) ev.miles = input.miles;
     set((s) => ({
       profiles: patchActive(s.profiles, s.activeProfileId, (p) => ({
         ...p,
@@ -271,6 +331,59 @@ export const useLabStore = create<LabState & LabActions>((set, get) => ({
     });
   },
 
+  addPointsOnDay: (input) => {
+    if (!Number.isFinite(input.points) || input.points === 0) return;
+    const active = get();
+    const profile = active.profiles.find((p) => p.id === active.activeProfileId);
+    if (!profile) return;
+    const timestamp = manualPointTimestamp(profile, input.day, input.time);
+    if (timestamp == null) return;
+    get().addEvent({
+      kind: input.kind,
+      points: input.points,
+      categoryId: input.categoryId,
+      exerciseId: input.exerciseId,
+      timestamp,
+      source: "manual",
+    });
+  },
+
+  setDayUp: (day, upAt) => {
+    set((s) => ({
+      profiles: patchActive(s.profiles, s.activeProfileId, (p) => writeUp(p, day, upAt, newId())),
+    }));
+    get().persist();
+  },
+
+  setDaySleep: (day, sleepAt) => {
+    set((s) => ({
+      profiles: patchActive(s.profiles, s.activeProfileId, (p) => writeSleep(p, day, sleepAt, newId())),
+    }));
+    get().persist();
+  },
+
+  stampUpNow: () => {
+    const now = Date.now();
+    let day = localDayKey(now);
+    set((s) => ({
+      profiles: patchActive(s.profiles, s.activeProfileId, (p) => {
+        const result = applyUpNow(p, now, newId());
+        day = result.day;
+        return result.profile;
+      }),
+    }));
+    get().persist();
+    return day;
+  },
+
+  stampSleepNow: () => {
+    const now = Date.now();
+    set((s) => ({
+      profiles: patchActive(s.profiles, s.activeProfileId, (p) => applySleepNow(p, now, newId())),
+    }));
+    get().persist();
+  },
+
   logMiles: (miles, categoryId) => {
     const s = get();
     const profile = s.profiles.find((p) => p.id === s.activeProfileId);
@@ -281,7 +394,44 @@ export const useLabStore = create<LabState & LabActions>((set, get) => ({
       categoryId ??
       profile.rules.categories.find((c) => c.id === "cardio")?.id ??
       profile.rules.categories[0]?.id;
-    get().addEvent({ kind: "workout", points, categoryId: cat, note: `${miles} mi` });
+    get().addEvent({
+      kind: "workout",
+      points,
+      categoryId: cat,
+      note: `${miles} mi`,
+      source: "manual",
+      miles,
+    });
+  },
+
+  ingestTrackerSession: (raw) => {
+    const activeId = get().activeProfileId;
+    const profile = get().profiles.find((p) => p.id === activeId);
+    if (!profile) return { status: "rejected", summary: "No active profile." };
+    const result = ingestTrackerSessionIntoProfile(profile, raw);
+    if (result.status === "added") {
+      const next = result.profile;
+      set((s) => ({
+        profiles: s.profiles.map((p) => (p.id === activeId ? next : p)),
+      }));
+      get().persist();
+    }
+    return { status: result.status, summary: ingestSummary(result) };
+  },
+
+  ingestTrackerSessions: (raw) => {
+    const activeId = get().activeProfileId;
+    const profile = get().profiles.find((p) => p.id === activeId);
+    if (!profile) return "No active profile.";
+    const result = ingestTrackerSessionsIntoProfile(profile, raw);
+    if (result.added > 0) {
+      const next = result.profile;
+      set((s) => ({
+        profiles: s.profiles.map((p) => (p.id === activeId ? next : p)),
+      }));
+      get().persist();
+    }
+    return formatIngestBatch(result);
   },
 
   addPlan: (name) => {

@@ -1,12 +1,12 @@
 # Workout 100 — desktop
 
-Desktop-first local ledger. Part 1 of **workout-100-app**. Sit this folder next to the Android tracker (`app/`). Do not overwrite Gradle files or `app/`.
+Desktop-first local ledger. The Android tracker is `tracker/`.
 
 ## What ships
 
 - Engine, views, and one empty **Public (basic)** profile.
 - Author rules: **cap 100**, **overflow on**, **0.25 mi = 1 pt**.
-- Empty exercise list. Empty events. **No catalog and no workout history ship.**
+- Public catalog is the shared On foot exercise (`on-foot`). Empty events. **No workout history ships.**
 - Add an exercise in the UI, or Import JSON, to test.
 
 ## What does not ship
@@ -14,7 +14,7 @@ Desktop-first local ledger. Part 1 of **workout-100-app**. Sit this folder next 
 - The 40-exercise public list (add later if you freeze it).
 - The expanded private catalog (~350).
 - Dated counts, sample completions, or localStorage dumps.
-- GPS / Android tracker code (that lives in `app/` at the repo root).
+- GPS / Android tracker code (that lives in `tracker/`).
 - Spreadsheets (`.xlsx`).
 
 Private packs stay on your machine. Import them with **Import JSON**. They persist in the browser only and are gitignored under `profiles/private/`.
@@ -34,9 +34,11 @@ npm run build    # production bundle in dist/
 npm run preview  # serve the bundle
 ```
 
-## Shared schema (Part 3)
+## Export
 
 Export JSON from Settings. The same document is what the phone tracker should write: profile + rules + exercises + events (+ optional track points later). Distance converts with the profile rule (`miles / 0.25` floored to points).
+
+A `session.v2` file ingests as one workout event. It binds to `on-foot` unless the file sets `exerciseId`. The event id is `trk_<sessionId>`, and that row stays unpacked so the id survives export and import. Desktop still does not record GPS.
 
 ## Git hygiene
 

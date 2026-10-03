@@ -14,6 +14,7 @@ import {
   calendarDaysBetween,
   dayKeysInclusive,
   formatDayShort,
+  labDayKey,
   localDayKey,
   startOfLocalDay,
   weekdayAllowed,
@@ -55,14 +56,15 @@ export function indexWorkouts(events: PointEvent[]): WorkoutIndex {
   return { points, lastAt };
 }
 
+/** Group events and carry overflow by lab day (Up → Sleep, else wakeTime). */
 export function scoreDays(profile: Profile, throughDay?: string): Map<string, DayScore> {
   const cap = Math.max(1, profile.rules.cap);
   const overflowOn = profile.rules.overflow;
-  const end = throughDay ?? localDayKey();
+  const end = throughDay ?? labDayKey(Date.now(), profile);
   const byDay = new Map<string, PointEvent[]>();
   let minDay: string | null = null;
   for (const e of profile.events) {
-    const day = localDayKey(e.timestamp);
+    const day = labDayKey(e.timestamp, profile);
     if (day > end) continue;
     const list = byDay.get(day);
     if (list) list.push(e);
@@ -101,9 +103,35 @@ export function scoreDays(profile: Profile, throughDay?: string): Map<string, Da
 }
 
 export function scoreToday(profile: Profile, now = Date.now()) {
-  const day = localDayKey(now);
+  return scoreOnDay(profile, labDayKey(now, profile));
+}
+
+export function scoreOnDay(profile: Profile, day: string): DayScore {
   const scores = scoreDays(profile, day);
   return scores.get(day) ?? emptyDayScore(day);
+}
+
+/** Miles on a lab day. Tracker walks, and any event that already carries miles. */
+export function milesOnDay(profile: Profile, day: string): number {
+  let sum = 0;
+  for (const event of profile.events) {
+    if (labDayKey(event.timestamp, profile) !== day) continue;
+    const miles = event.miles;
+    const hasMiles = typeof miles === "number" && Number.isFinite(miles) && miles > 0;
+    if (event.source !== "tracker" && !hasMiles) continue;
+    if (!hasMiles || typeof miles !== "number") continue;
+    sum += miles;
+  }
+  return sum;
+}
+
+export function milesToday(profile: Profile, now = Date.now()): number {
+  return milesOnDay(profile, labDayKey(now, profile));
+}
+
+export function formatMiles(miles: number): string {
+  const rounded = Math.round(miles * 100) / 100;
+  return String(rounded);
 }
 
 export function cycloneRows(

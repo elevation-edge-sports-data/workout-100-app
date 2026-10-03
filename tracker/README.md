@@ -11,7 +11,7 @@ Kotlin, Jetpack Compose, Gradle.
 ## Open in Android Studio
 
 1. Open Android Studio **2026.1.4** (or later).
-2. **File → Open** and choose this folder: `workout-lab-track`.
+2. **File → Open** and choose this folder: `tracker/`.
 3. Let Gradle sync. If prompted for an SDK, use the default (`%LOCALAPPDATA%\Android\Sdk`).
 4. Plug in a phone with USB debugging, or pick one from the device list.
 5. Click **Run** (app: `com.workoutlab.track`).

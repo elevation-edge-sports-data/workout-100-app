@@ -5,9 +5,11 @@ export const CAT_CARDIO = "#FF3399";
 export const CAT_CORE = "#ED7D31";
 export const CAT_LEGS = "#009999";
 export const CAT_ARMS = "#0070C0";
+/** Sheet fill rgb FF9966FF on the unnamed category header. */
+export const CAT_MISC = "#9966FF";
 
 /** Bump when author palette, categories, or the public catalog change. */
-export const AUTHOR_PALETTE_REV = 1;
+export const AUTHOR_PALETTE_REV = 2;
 
 export function authorCategories(): Category[] {
   return [
@@ -15,6 +17,7 @@ export function authorCategories(): Category[] {
     { id: "core", name: "core", color: CAT_CORE },
     { id: "legs", name: "legs", color: CAT_LEGS },
     { id: "arms", name: "arms", color: CAT_ARMS },
+    { id: "misc", name: "misc", color: CAT_MISC },
   ];
 }
 
@@ -77,9 +80,9 @@ function seedPublicCatalog(profile: Profile): Profile {
 function migrateAuthorPalette(profile: Profile): Profile {
   const cats = authorCategories();
   const byId = new Map(cats.map((c) => [c.id, c]));
-  const merged = profile.rules.categories
-    .filter((c) => c.id !== "misc")
-    .map((c) => (byId.has(c.id) ? { ...c, color: byId.get(c.id)!.color, name: byId.get(c.id)!.name } : c));
+  const merged = profile.rules.categories.map((c) =>
+    byId.has(c.id) ? { ...c, color: byId.get(c.id)!.color, name: byId.get(c.id)!.name } : c,
+  );
   const have = new Set(merged.map((c) => c.id));
   for (const c of cats) if (!have.has(c.id)) merged.push(c);
   const miles = profile.rules.milesPerPoint;

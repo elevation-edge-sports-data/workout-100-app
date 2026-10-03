@@ -3,6 +3,7 @@ package com.workoutlab.track.data.export
 import com.workoutlab.track.data.db.PointEntity
 import com.workoutlab.track.data.db.SESSION_COMPLETE
 import com.workoutlab.track.data.db.SessionEntity
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -45,7 +46,16 @@ class SessionExporterTest {
     @Test
     fun jsonContainsWorkoutMetadataAndNoInventedCatalog() {
         val json = SessionExporter.toJson(session, points)
+        assertTrue(json.contains("\"app\": \"workout-lab-100\""))
         assertTrue(json.contains("\"type\": \"workout_session\""))
+        assertTrue(json.contains("\"schema\": \"session.v2\""))
+        assertTrue(json.contains("\"sessionId\": \"1\""))
+        assertTrue(json.contains("\"id\": \"1\""))
+        assertTrue(json.contains("\"exerciseId\": \"on-foot\""))
+        assertTrue(json.contains("\"startedAtMs\": 1700000000000"))
+        assertTrue(json.contains("\"endedAtMs\": 1700000600000"))
+        val miles = Regex("\"miles\": ([0-9.]+)").find(json)?.groupValues?.get(1)?.toDouble()
+        assertEquals(session.workoutDistanceMeters / 1609.344, miles!!, 0.0000001)
         assertFalse(json.contains("startBattery"))
         assertFalse(json.contains("stopBattery"))
         assertTrue(json.contains("\"excludedSampleCount\": 12"))

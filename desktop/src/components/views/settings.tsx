@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { parseImport } from "@/lib/lab/io";
 import { useActiveProfile, useLabStore } from "@/lib/lab/store";
 import type { PresetId } from "@/lib/lab/types";
 
@@ -82,6 +83,42 @@ export function SettingsView() {
       </section>
 
       <section className="space-y-3">
+        <h2 className="text-sm font-medium">Fallback clock</h2>
+        <p className="text-xs text-muted-foreground">
+          Wake time splits a day that has no Up or Sleep. Sleep time stays on the profile and does
+          not close a day.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            Wake time
+            <Input
+              type="time"
+              className="w-36"
+              value={profile.rules.wakeTime}
+              onChange={(e) => {
+                const wakeTime = e.target.value;
+                if (!/^\d{2}:\d{2}$/.test(wakeTime)) return;
+                store.setWakeSleep(wakeTime, profile.rules.sleepTime);
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            Sleep time
+            <Input
+              type="time"
+              className="w-36"
+              value={profile.rules.sleepTime}
+              onChange={(e) => {
+                const sleepTime = e.target.value;
+                if (!/^\d{2}:\d{2}$/.test(sleepTime)) return;
+                store.setWakeSleep(profile.rules.wakeTime, sleepTime);
+              }}
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="space-y-3">
         <h2 className="text-sm font-medium">Categories</h2>
         <ul className="space-y-2">
           {profile.rules.categories.map((c) => (
@@ -119,18 +156,57 @@ export function SettingsView() {
               className="hidden"
               onChange={async (e) => {
                 const file = e.target.files?.[0];
+                e.target.value = "";
                 if (!file) return;
                 try {
                   const raw = JSON.parse(await file.text());
-                  const res = store.applyImport(raw, "merge");
-                  toast(res.ok ? res.summary : res.message);
+                  if (parseImport(raw)) {
+                    const res = store.applyImport(raw, "merge");
+                    toast(res.ok ? res.summary : res.message);
+                  } else {
+                    toast(store.ingestTrackerSessions(raw));
+                  }
                 } catch {
                   toast.error("Invalid JSON");
                 }
               }}
             />
           </label>
+          <label className="inline-flex h-10 cursor-pointer items-center rounded-md bg-secondary px-4 text-sm">
+            Import sessions
+            <input
+              type="file"
+              accept="application/json"
+              multiple
+              className="hidden"
+              onChange={async (e) => {
+                const files = [...(e.target.files ?? [])];
+                e.target.value = "";
+                if (!files.length) return;
+                let unreadable = 0;
+                const chunks: unknown[] = [];
+                for (const file of files) {
+                  try {
+                    chunks.push(JSON.parse(await file.text()));
+                  } catch {
+                    unreadable += 1;
+                  }
+                }
+                const parts: string[] = [];
+                if (chunks.length) parts.push(store.ingestTrackerSessions(chunks));
+                if (unreadable) {
+                  parts.push(`${unreadable} file${unreadable === 1 ? "" : "s"} unreadable`);
+                }
+                const summary = parts.join(" · ");
+                if (unreadable && !chunks.length) toast.error(summary);
+                else toast(summary);
+              }}
+            />
+          </label>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Phone walk JSON becomes On foot points. Same walk twice does not double-count.
+        </p>
       </section>
 
       <section className="space-y-3">

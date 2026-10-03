@@ -21,6 +21,8 @@ export type Exercise = {
   youtube?: YoutubeRef[];
 };
 
+export type EventSource = "manual" | "tracker";
+
 export type PointEvent = {
   id: string;
   kind: EventKind;
@@ -29,6 +31,9 @@ export type PointEvent = {
   categoryId?: string;
   exerciseId?: string;
   note?: string;
+  source?: EventSource;
+  sessionId?: string;
+  miles?: number;
 };
 
 export type PlanItem = {
@@ -51,6 +56,14 @@ export type Rules = {
   sleepTime: string;
 };
 
+/** One lab day, from Up to Sleep. `day` is the local date of `upAt`. */
+export type DayStamp = {
+  id: string;
+  day: string;
+  upAt: number;
+  sleepAt?: number;
+};
+
 export type ProfileVisibility = "public" | "private";
 
 export type Profile = {
@@ -63,6 +76,7 @@ export type Profile = {
   plans: Plan[];
   pinnedPlanId: string | null;
   historyCleared?: boolean;
+  dayStamps?: DayStamp[];
 };
 
 export type LabData = {
@@ -134,6 +148,9 @@ export const RANK_RANGES: { id: RankRangeId; label: string; days: number }[] = [
 
 export const STORAGE_KEY = "workout-lab-100.v1";
 export const APP_ID = "workout-lab-100";
+export const ON_FOOT_EXERCISE_ID = "on-foot";
+export const SESSION_SCHEMA = "session.v2";
+export const LAB_EXPORT_VERSION = 1;
 export const STALE_AFTER_DAYS = 7;
 export const CYCLONE_DAYS = 14;
 export const MATRIX_DAYS = 14;

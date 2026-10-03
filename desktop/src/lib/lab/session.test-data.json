@@ -1,0 +1,13 @@
+{
+  "app": "workout-lab-100",
+  "schema": "session.v2",
+  "sessionId": "walk-1.25",
+  "startedAt": 1714521600000,
+  "endedAt": 1714525200000,
+  "miles": 1.25,
+  "exerciseId": "on-foot",
+  "categoryId": "cardio",
+  "finishReason": "user",
+  "tz": "America/Chicago",
+  "path": [{ "t": 1714521600000, "lat": 41.88, "lon": -87.63, "accFt": 20 }]
+}

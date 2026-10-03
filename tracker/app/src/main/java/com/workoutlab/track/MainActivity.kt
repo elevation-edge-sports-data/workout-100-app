@@ -19,6 +19,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,9 +29,11 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.workoutlab.track.ledger.LedgerStore
 import com.workoutlab.track.recording.RecordingRepository
 import com.workoutlab.track.recording.WatcherService
 import com.workoutlab.track.settings.TrackSettings
+import com.workoutlab.track.ui.LedgerScreen
 import com.workoutlab.track.ui.LiveScreen
 import com.workoutlab.track.ui.RecentScreen
 import com.workoutlab.track.ui.theme.WorkoutLabTheme
@@ -44,6 +47,8 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     private val repository: RecordingRepository
         get() = (application as WorkoutLabApp).repository
+    private val ledger: LedgerStore
+        get() = (application as WorkoutLabApp).ledger
     private val trackSettings: TrackSettings
         get() = (application as WorkoutLabApp).trackSettings
 
@@ -101,6 +106,14 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.CreateDocument("application/gpx+xml"),
     ) { uri -> uri?.let { writeExport(it, json = false) } }
 
+    private val openLab = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { importLab(it) } }
+
+    private val createLab = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let { exportLab(it) } }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -114,7 +127,14 @@ class MainActivity : ComponentActivity() {
             val recent by repository.recentSessions.collectAsStateWithLifecycle()
             val sortByDistance by app.trackSettings.recentSortByDistance.collectAsStateWithLifecycle()
             val watcherRunning by WatcherService.running.collectAsStateWithLifecycle()
+            val labProfile by app.ledger.profile.collectAsStateWithLifecycle()
+            val labStatus by app.ledger.status.collectAsStateWithLifecycle()
             var tab by rememberSaveable { mutableIntStateOf(0) }
+            LaunchedEffect(tab) {
+                if (tab == 2) {
+                    app.ledger.reconcile(repository.finishedSessions())
+                }
+            }
             WorkoutLabTheme {
                 Scaffold(
                     bottomBar = {
@@ -130,6 +150,12 @@ class MainActivity : ComponentActivity() {
                                 onClick = { tab = 1 },
                                 icon = { Text(if (tab == 1) "●" else "○") },
                                 label = { Text("Recent") },
+                            )
+                            NavigationBarItem(
+                                selected = tab == 2,
+                                onClick = { tab = 2 },
+                                icon = { Text(if (tab == 2) "●" else "○") },
+                                label = { Text("Ledger") },
                             )
                         }
                     },
@@ -173,7 +199,7 @@ class MainActivity : ComponentActivity() {
                                     app.trackSettings.setInactivityFinishSec(sec)
                                 },
                             )
-                        } else {
+                        } else if (tab == 1) {
                             RecentScreen(
                                 sessions = recent,
                                 sortByDistance = sortByDistance,
@@ -184,6 +210,29 @@ class MainActivity : ComponentActivity() {
                                 tileLoader = app.tileLoader,
                                 onExportJson = { id -> launchExport(json = true, sessionId = id) },
                                 onExportGpx = { id -> launchExport(json = false, sessionId = id) },
+                            )
+                        } else {
+                            LedgerScreen(
+                                profile = labProfile,
+                                status = labStatus,
+                                onAdd = { exerciseId, points, timestamp ->
+                                    lifecycleScope.launch { app.ledger.addManual(exerciseId, points, timestamp) }
+                                },
+                                onDayUp = { day, upAt ->
+                                    lifecycleScope.launch { app.ledger.saveDayUp(day, upAt) }
+                                },
+                                onDaySleep = { day, sleepAt ->
+                                    lifecycleScope.launch { app.ledger.saveDaySleep(day, sleepAt) }
+                                },
+                                onUpNow = { now ->
+                                    lifecycleScope.launch { app.ledger.saveUpNow(now) }
+                                },
+                                onSleepNow = { now ->
+                                    lifecycleScope.launch { app.ledger.saveSleepNow(now) }
+                                },
+                                onMessage = { message -> app.ledger.setStatus(message) },
+                                onImport = { openLab.launch(arrayOf("application/json")) },
+                                onExport = { createLab.launch("workout-lab-100-${labProfile.id}.json") },
                             )
                         }
                     }
@@ -373,6 +422,35 @@ class MainActivity : ComponentActivity() {
                 }.isSuccess
             }
             repository.setMessage(if (ok) "Saved." else "Could not write the file.")
+        }
+    }
+
+    private fun importLab(uri: Uri) {
+        lifecycleScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                }.getOrNull()
+            }
+            if (text == null) {
+                ledger.setStatus("Could not read the file.")
+            } else {
+                ledger.importJson(text)
+            }
+        }
+    }
+
+    private fun exportLab(uri: Uri) {
+        lifecycleScope.launch {
+            val body = ledger.exportJson()
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(body.toByteArray(Charsets.UTF_8))
+                    } ?: error("Could not open file")
+                }.isSuccess
+            }
+            ledger.setStatus(if (ok) "Exported lab JSON." else "Could not write the file.")
         }
     }
 }

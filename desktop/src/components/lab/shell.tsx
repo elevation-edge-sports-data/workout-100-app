@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { cn } from "@/lib/cn";
-import { scoreToday } from "@/lib/lab/engine";
+import { formatMiles, milesToday, scoreToday } from "@/lib/lab/engine";
 import { AUTHOR_PALETTE_REV } from "@/lib/lab/defaults";
 import { useActiveProfile, useLabStore } from "@/lib/lab/store";
 import { CategoryTheme } from "./theme-vars";
@@ -162,12 +162,14 @@ function ProfileChip() {
 function Scoreline() {
   const profile = useActiveProfile();
   const score = scoreToday(profile);
+  const miles = milesToday(profile);
   return (
     <p className="mt-0.5 text-sm">
       <span className="font-medium">{profile.name}</span>
       <span className="text-muted-foreground">
         {" "}
         / {score.towardCap}/{profile.rules.cap}
+        {miles > 0 ? ` · ${formatMiles(miles)} mi` : ""}
         {profile.rules.overflow ? ` overflow ${score.overflowOut}` : ""}
       </span>
     </p>

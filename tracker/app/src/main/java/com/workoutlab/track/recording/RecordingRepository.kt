@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 class RecordingRepository(
     private val app: Application,
     private val settings: TrackSettings,
+    private val onSessionFinished: suspend (SessionEntity) -> Unit = {},
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val dao = AppDatabase.create(app).sessionDao()
@@ -297,6 +298,7 @@ class RecordingRepository(
             dao.updateSession(completed)
             val points = dao.pointsFor(sessionId)
             SessionArchive.save(app, completed, points)
+            runCatching { onSessionFinished(completed) }
             activeSessionId = null
             track.reset()
             _ui.value = RecordingUiState(
@@ -313,6 +315,8 @@ class RecordingRepository(
         if (session == null || session.status != SESSION_COMPLETE) return@withContext null
         SessionExporter.toJson(session, dao.pointsFor(session.id))
     }
+
+    suspend fun finishedSessions(): List<SessionEntity> = dao.allCompleteSessions()
 
     suspend fun exportGpx(sessionId: Long? = null): String? = withContext(Dispatchers.IO) {
         val session = if (sessionId != null) dao.getSession(sessionId) else dao.lastCompleteSessionOnce()
@@ -385,6 +389,7 @@ class RecordingRepository(
                 )
                 dao.updateSession(completed)
                 SessionArchive.save(app, completed, points)
+                runCatching { onSessionFinished(completed) }
             }
             val points = dao.pointsFor(newest.id)
             val path = points.map { PathPoint(it.latitude, it.longitude, it.startsSegment) }

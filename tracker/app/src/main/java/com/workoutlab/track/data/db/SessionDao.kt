@@ -35,6 +35,9 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE status = 'complete' ORDER BY startedAtEpochMs DESC LIMIT 100")
     suspend fun completeSessions(): List<SessionEntity>
 
+    @Query("SELECT * FROM sessions WHERE status = 'complete'")
+    suspend fun allCompleteSessions(): List<SessionEntity>
+
     @Query("SELECT * FROM points WHERE sessionId = :sessionId ORDER BY timestampEpochMs ASC")
     suspend fun pointsFor(sessionId: Long): List<PointEntity>
 

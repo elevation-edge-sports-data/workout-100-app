@@ -37,6 +37,9 @@ export function TotalsView() {
           </ResponsiveContainer>
         </div>
       )}
+      {has && (
+        <p className="text-sm text-muted-foreground">Walk miles are in Today, not in this stack.</p>
+      )}
     </div>
   );
 }
